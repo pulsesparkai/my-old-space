@@ -1,0 +1,184 @@
+import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Badge } from '@/components/ui/badge';
+import { useAuth } from '@/hooks/useAuth';
+import { useToast } from '@/hooks/use-toast';
+import { supabase } from '@/integrations/supabase/client';
+import { ArrowLeft, Check, X } from 'lucide-react';
+
+interface ProfileComment {
+  id: string;
+  body: string;
+  status: string;
+  created_at: string;
+  author_user_id: string;
+  profiles: {
+    username: string;
+    display_name: string;
+    avatar_url?: string;
+  };
+}
+
+export default function ProfileCommentModeration() {
+  const [comments, setComments] = useState<ProfileComment[]>([]);
+  const [loading, setLoading] = useState(true);
+  const { user } = useAuth();
+  const { toast } = useToast();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    fetchPendingComments();
+  }, [user]);
+
+  const fetchPendingComments = async () => {
+    if (!user) return;
+
+    try {
+      const { data, error } = await supabase
+        .from('profile_comments')
+        .select(`
+          *,
+          profiles!profile_comments_author_user_id_fkey (username, display_name, avatar_url)
+        `)
+        .eq('target_user_id', user.id)
+        .eq('status', 'pending')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setComments(data || []);
+    } catch (err) {
+      console.error('Error fetching pending comments:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleModeration = async (commentId: string, action: 'approve' | 'reject') => {
+    try {
+      const status = action === 'approve' ? 'approved' : 'rejected';
+      
+      const { error } = await supabase
+        .from('profile_comments')
+        .update({ status })
+        .eq('id', commentId)
+        .eq('target_user_id', user?.id);
+
+      if (error) throw error;
+
+      // Remove comment from pending list
+      setComments(comments.filter(c => c.id !== commentId));
+
+      toast({
+        title: 'Success',
+        description: `Comment ${action}d successfully`
+      });
+
+      // Create notification if approved
+      if (action === 'approve') {
+        const comment = comments.find(c => c.id === commentId);
+        if (comment) {
+          await supabase
+            .from('notifications')
+            .insert([{
+              user_id: comment.author_user_id,
+              type: 'profile_comment_approved',
+              entity_id: commentId
+            }]);
+        }
+      }
+    } catch (err: any) {
+      toast({
+        title: 'Error',
+        description: err.message || `Failed to ${action} comment`,
+        variant: 'destructive'
+      });
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-primary"></div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-background">
+      <div className="max-w-2xl mx-auto px-4 py-8">
+        <div className="flex items-center space-x-4 mb-6">
+          <Button variant="ghost" size="sm" onClick={() => navigate('/app')}>
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+          <h1 className="text-2xl font-bold">Profile Comment Moderation</h1>
+          {comments.length > 0 && (
+            <Badge variant="secondary">{comments.length} pending</Badge>
+          )}
+        </div>
+
+        {comments.length === 0 ? (
+          <Card>
+            <CardContent className="text-center py-12">
+              <p className="text-muted-foreground">No pending comments to moderate</p>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="space-y-4">
+            {comments.map((comment) => (
+              <Card key={comment.id}>
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-3">
+                      <Avatar>
+                        <AvatarImage src={comment.profiles?.avatar_url} />
+                        <AvatarFallback>
+                          {comment.profiles?.display_name?.[0] || comment.profiles?.username?.[0]?.toUpperCase()}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div>
+                        <p className="font-medium">
+                          {comment.profiles?.display_name || comment.profiles?.username}
+                        </p>
+                        <p className="text-sm text-muted-foreground">
+                          @{comment.profiles?.username}
+                        </p>
+                      </div>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      {new Date(comment.created_at).toLocaleString()}
+                    </p>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <p className="mb-4 whitespace-pre-wrap">{comment.body}</p>
+                  
+                  <div className="flex space-x-2">
+                    <Button
+                      size="sm"
+                      onClick={() => handleModeration(comment.id, 'approve')}
+                      className="bg-green-600 hover:bg-green-700"
+                    >
+                      <Check className="h-4 w-4 mr-1" />
+                      Approve
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      onClick={() => handleModeration(comment.id, 'reject')}
+                    >
+                      <X className="h-4 w-4 mr-1" />
+                      Reject
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
