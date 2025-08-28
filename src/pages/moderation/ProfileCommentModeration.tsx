@@ -46,22 +46,23 @@ export default function ProfileCommentModeration() {
       }
 
       // 2) fetch author profiles
-      const authorIds = Array.from(new Set(pcs.map(c => c.author_user_id)));
-      const { data: profiles } = await supabase
-        .from('profiles')
-        .select('*')
-        .in('user_id', authorIds);
-
-      const profilesById = new Map<string, Profile>();
-      (profiles || []).forEach(p => profilesById.set(p.user_id, p));
+      const authorIds = Array.from(new Set((pcs as ProfileComment[]).map(c => c.author_user_id)));
+      let profilesById = new Map<string, Profile>();
+      if (authorIds.length) {
+        const { data: profiles } = await supabase
+          .from('profiles')
+          .select('*')
+          .in('user_id', authorIds);
+        (profiles || []).forEach(p => profilesById.set((p as Profile).user_id, p as Profile));
+      }
 
       // 3) merge
-      const enriched = pcs.map(c => ({
+      const enriched = (pcs as ProfileComment[]).map(c => ({
         ...c,
         author_profile: profilesById.get(c.author_user_id) || null
       }));
 
-      setComments(enriched);
+      setComments(enriched as EnrichedProfileComment[]);
     } catch (err) {
       console.error('Error fetching pending comments:', err);
     } finally {

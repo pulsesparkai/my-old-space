@@ -1,4 +1,5 @@
 // src/types/aliases.ts
+export type { Database } from "@/types/database.types";
 import type { Database } from "@/types/database.types";
 
 export type Profile = Database["public"]["Tables"]["profiles"]["Row"];

@@ -63,22 +63,23 @@ export default function AdminModeration() {
       }
 
       // 2) fetch reporter profiles
-      const reporterIds = Array.from(new Set(reports.map(r => r.reporter_id)));
-      const { data: profiles } = await supabase
-        .from('profiles')
-        .select('*')
-        .in('user_id', reporterIds);
-
-      const profilesById = new Map<string, Profile>();
-      (profiles || []).forEach(p => profilesById.set(p.user_id, p));
+      const reporterIds = Array.from(new Set((reports as Report[]).map(r => r.reporter_id)));
+      let profilesById = new Map<string, Profile>();
+      if (reporterIds.length) {
+        const { data: profiles } = await supabase
+          .from('profiles')
+          .select('*')
+          .in('user_id', reporterIds);
+        (profiles || []).forEach(p => profilesById.set((p as Profile).user_id, p as Profile));
+      }
 
       // 3) merge
-      const enriched = reports.map(r => ({
+      const enriched = (reports as Report[]).map(r => ({
         ...r,
         reporter_profile: profilesById.get(r.reporter_id) || null
       }));
 
-      setReports(enriched);
+      setReports(enriched as EnrichedReport[]);
     } catch (err) {
       console.error('Error fetching reports:', err);
     } finally {

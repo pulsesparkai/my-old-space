@@ -7,7 +7,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
-import type { Profile } from '@/types/aliases';
+import type { Profile, ProfileComment } from '@/types/aliases';
 
 export default function UserProfile() {
   const { username } = useParams<{ username: string }>();
@@ -41,7 +41,7 @@ export default function UserProfile() {
         .single();
 
       if (error) throw error;
-      setProfile(data);
+      setProfile(data as Profile);
     } catch (err) {
       console.error('Error fetching profile:', err);
     } finally {
@@ -83,17 +83,17 @@ export default function UserProfile() {
       }
 
       // 2) fetch author profiles
-      const authorIds = Array.from(new Set(pcs.map(c => c.author_user_id)));
+      const authorIds = Array.from(new Set((pcs as ProfileComment[]).map(c => c.author_user_id)));
       const { data: profiles } = await supabase
         .from('profiles')
         .select('*')
         .in('user_id', authorIds);
 
-      const profilesById = new Map();
-      (profiles || []).forEach(p => profilesById.set(p.user_id, p));
+      const profilesById = new Map<string, Profile>();
+      (profiles || []).forEach(p => profilesById.set((p as Profile).user_id, p as Profile));
 
       // 3) merge
-      const enriched = pcs.map(c => ({
+      const enriched = (pcs as ProfileComment[]).map(c => ({
         ...c,
         profiles: profilesById.get(c.author_user_id) || null
       }));
@@ -148,13 +148,14 @@ export default function UserProfile() {
     );
   }
 
+  const theme = profile.theme as { accent?: string; bg?: string } | null;
   const themeStyles = {
-    backgroundColor: profile.theme?.accent + '10',
-    borderColor: profile.theme?.accent
+    backgroundColor: theme?.accent ? `${theme.accent}10` : undefined,
+    borderColor: theme?.accent
   };
 
   return (
-    <div className="min-h-screen" style={{ backgroundColor: profile.theme?.bg ? `var(--bg-${profile.theme.bg})` : undefined }}>
+    <div className="min-h-screen" style={{ backgroundColor: theme?.bg ? `var(--bg-${theme.bg})` : undefined }}>
       <div className="max-w-4xl mx-auto px-4 py-8">
         {/* Profile Header */}
         <Card style={themeStyles}>
@@ -168,7 +169,7 @@ export default function UserProfile() {
               </Avatar>
               
               <div>
-                <h1 className="text-2xl font-bold" style={{ color: profile.theme?.accent }}>
+                <h1 className="text-2xl font-bold" style={{ color: theme?.accent }}>
                   {profile.display_name || profile.username}
                 </h1>
                 <p className="text-muted-foreground">@{profile.username}</p>
