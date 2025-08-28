@@ -5,11 +5,12 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { ArrowLeft } from 'lucide-react';
+import AvatarUpload from '@/components/AvatarUpload';
+import { sanitizeText } from '@/lib/sanitize';
 
 export default function ProfileSettings() {
   const [displayName, setDisplayName] = useState('');
@@ -37,8 +38,8 @@ export default function ProfileSettings() {
       const { error } = await supabase
         .from('profiles')
         .update({
-          display_name: displayName,
-          bio: bio,
+          display_name: sanitizeText(displayName),
+          bio: sanitizeText(bio),
           avatar_url: avatarUrl || null
         })
         .eq('user_id', user.id);
@@ -81,24 +82,16 @@ export default function ProfileSettings() {
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-6">
               {/* Avatar */}
-              <div className="flex items-center space-x-4">
-                <Avatar className="h-20 w-20">
-                  <AvatarImage src={avatarUrl} />
-                  <AvatarFallback>
-                    {displayName?.[0] || profile?.username?.[0]?.toUpperCase()}
-                  </AvatarFallback>
-                </Avatar>
-                <div className="space-y-2">
-                  <Label htmlFor="avatar">Avatar URL</Label>
-                  <Input
-                    id="avatar"
-                    type="url"
-                    placeholder="https://example.com/avatar.jpg"
-                    value={avatarUrl}
-                    onChange={(e) => setAvatarUrl(e.target.value)}
-                    disabled={loading}
-                  />
-                </div>
+              <div className="space-y-4">
+                <Label>Profile Picture</Label>
+                <AvatarUpload 
+                  currentAvatarUrl={avatarUrl}
+                  onAvatarUpdate={(url) => setAvatarUrl(url)}
+                  size="lg"
+                />
+                <p className="text-sm text-muted-foreground">
+                  Click to upload a new avatar (max 5MB)
+                </p>
               </div>
 
               {/* Username (read-only) */}

@@ -5,14 +5,16 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
-import { usernameSchema, isReservedUsername } from '@/lib/validation';
+import { validateUsername, sanitizeUsername } from '@/lib/sanitize';
 import { supabase } from '@/integrations/supabase/client';
+import { ExternalLink, Settings } from 'lucide-react';
 
 export default function ChooseUsername() {
   const [username, setUsername] = useState('');
   const [loading, setLoading] = useState(false);
   const [isChecking, setIsChecking] = useState(false);
   const [isAvailable, setIsAvailable] = useState<boolean | null>(null);
+  const [isComplete, setIsComplete] = useState(false);
   const { toast } = useToast();
   const { user, refreshProfile } = useAuth();
   const navigate = useNavigate();
@@ -23,14 +25,8 @@ export default function ChooseUsername() {
       return;
     }
 
-    try {
-      usernameSchema.parse(value);
-    } catch {
-      setIsAvailable(false);
-      return;
-    }
-
-    if (isReservedUsername(value)) {
+    const validation = validateUsername(value);
+    if (!validation.valid) {
       setIsAvailable(false);
       return;
     }
@@ -53,7 +49,7 @@ export default function ChooseUsername() {
   };
 
   const handleUsernameChange = (value: string) => {
-    const cleaned = value.toLowerCase().replace(/[^a-z0-9-]/g, '');
+    const cleaned = sanitizeUsername(value);
     setUsername(cleaned);
     
     // Debounce username checking
@@ -77,18 +73,22 @@ export default function ChooseUsername() {
         }]);
 
       if (error) {
-        toast({
-          title: 'Error',
-          description: error.message,
-          variant: 'destructive'
-        });
+        if (error.code === '23505') {
+          toast({
+            title: 'Username taken',
+            description: 'This username is already taken. Please choose another.',
+            variant: 'destructive'
+          });
+        } else {
+          toast({
+            title: 'Error',
+            description: error.message,
+            variant: 'destructive'
+          });
+        }
       } else {
         await refreshProfile();
-        toast({
-          title: 'Success',
-          description: 'Your username has been set!'
-        });
-        navigate('/app');
+        setIsComplete(true);
       }
     } catch (err) {
       toast({
@@ -111,13 +111,45 @@ export default function ChooseUsername() {
 
   const isValid = username.length >= 3 && isAvailable === true;
 
+  if (isComplete) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background p-4">
+        <Card className="w-full max-w-md">
+          <CardHeader className="text-center">
+            <CardTitle className="text-2xl font-bold">🎉 Welcome to Top8!</CardTitle>
+            <CardDescription>
+              Your profile is ready at <strong>https://{username}.top8.io</strong>
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <Button 
+              onClick={() => window.open(`https://${username}.top8.io`, '_blank')}
+              className="w-full"
+            >
+              <ExternalLink className="h-4 w-4 mr-2" />
+              View Profile
+            </Button>
+            <Button 
+              variant="outline"
+              onClick={() => navigate('/settings/profile')}
+              className="w-full"
+            >
+              <Settings className="h-4 w-4 mr-2" />
+              Customize Profile
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
           <CardTitle className="text-2xl font-bold">Choose Your Username</CardTitle>
           <CardDescription>
-            This will be your unique identifier on Top8. Choose wisely - you can only change it once!
+            This will be your unique identifier. Your profile will be available at https://{username || 'username'}.top8.io
           </CardDescription>
         </CardHeader>
         <CardContent>

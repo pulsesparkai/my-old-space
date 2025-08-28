@@ -1,60 +1,70 @@
-// Simple in-memory rate limiting for demo purposes
+// Simple in-memory rate limiter for demo purposes
 // In production, use Redis or a proper rate limiting service
 
-const userLimits = new Map<string, { count: number; resetTime: number }>();
-const ipLimits = new Map<string, { count: number; resetTime: number }>();
-
-const RATE_LIMIT_WINDOW = 60000; // 1 minute
-const MAX_REQUESTS_PER_USER = 30;
-const MAX_REQUESTS_PER_IP = 100;
-
-function cleanupExpired(limits: Map<string, { count: number; resetTime: number }>) {
-  const now = Date.now();
-  for (const [key, limit] of limits.entries()) {
-    if (now > limit.resetTime) {
-      limits.delete(key);
-    }
-  }
+interface RateLimit {
+  count: number;
+  resetTime: number;
 }
 
-export function checkRateLimit(userId: string | null, ip: string): boolean {
+const rateLimits = new Map<string, RateLimit>();
+
+export interface RateLimitConfig {
+  max: number;
+  windowMs: number;
+}
+
+export const defaultLimits = {
+  post: { max: 10, windowMs: 15 * 60 * 1000 }, // 10 posts per 15 minutes
+  comment: { max: 20, windowMs: 15 * 60 * 1000 }, // 20 comments per 15 minutes
+  profileComment: { max: 5, windowMs: 60 * 60 * 1000 }, // 5 profile comments per hour
+  friendship: { max: 10, windowMs: 60 * 60 * 1000 }, // 10 friend requests per hour
+  general: { max: 100, windowMs: 15 * 60 * 1000 }, // 100 general actions per 15 minutes
+};
+
+export function rateLimit(
+  identifier: string, 
+  config: RateLimitConfig = defaultLimits.general
+): { success: boolean; remaining: number; resetTime: number } {
   const now = Date.now();
+  const key = identifier;
   
-  // Clean up expired entries
-  cleanupExpired(userLimits);
-  cleanupExpired(ipLimits);
-  
-  // Check user rate limit
-  if (userId) {
-    const userLimit = userLimits.get(userId);
-    if (userLimit) {
-      if (now < userLimit.resetTime) {
-        if (userLimit.count >= MAX_REQUESTS_PER_USER) {
-          return false;
-        }
-        userLimit.count++;
-      } else {
-        userLimits.set(userId, { count: 1, resetTime: now + RATE_LIMIT_WINDOW });
+  // Clean up expired entries periodically
+  if (Math.random() < 0.01) {
+    for (const [k, limit] of rateLimits.entries()) {
+      if (now > limit.resetTime) {
+        rateLimits.delete(k);
       }
-    } else {
-      userLimits.set(userId, { count: 1, resetTime: now + RATE_LIMIT_WINDOW });
     }
   }
   
-  // Check IP rate limit
-  const ipLimit = ipLimits.get(ip);
-  if (ipLimit) {
-    if (now < ipLimit.resetTime) {
-      if (ipLimit.count >= MAX_REQUESTS_PER_IP) {
-        return false;
-      }
-      ipLimit.count++;
-    } else {
-      ipLimits.set(ip, { count: 1, resetTime: now + RATE_LIMIT_WINDOW });
-    }
-  } else {
-    ipLimits.set(ip, { count: 1, resetTime: now + RATE_LIMIT_WINDOW });
+  const existing = rateLimits.get(key);
+  
+  if (!existing || now > existing.resetTime) {
+    // Create new or reset expired limit
+    const resetTime = now + config.windowMs;
+    rateLimits.set(key, { count: 1, resetTime });
+    return { success: true, remaining: config.max - 1, resetTime };
   }
   
-  return true;
+  if (existing.count >= config.max) {
+    return { success: false, remaining: 0, resetTime: existing.resetTime };
+  }
+  
+  existing.count++;
+  return { success: true, remaining: config.max - existing.count, resetTime: existing.resetTime };
+}
+
+export function createRateLimiter(userId: string, ip: string, action: keyof typeof defaultLimits) {
+  const config = defaultLimits[action];
+  
+  // Check both user and IP based limits
+  const userLimit = rateLimit(`user:${userId}:${action}`, config);
+  const ipLimit = rateLimit(`ip:${ip}:${action}`, config);
+  
+  return {
+    success: userLimit.success && ipLimit.success,
+    remaining: Math.min(userLimit.remaining, ipLimit.remaining),
+    resetTime: Math.max(userLimit.resetTime, ipLimit.resetTime),
+    limitedBy: !userLimit.success ? 'user' : !ipLimit.success ? 'ip' : null
+  };
 }

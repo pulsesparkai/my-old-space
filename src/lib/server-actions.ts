@@ -49,8 +49,8 @@ export async function createPost(body: string, visibility: 'public' | 'friends' 
     throw new Error('Rate limit exceeded');
   }
   
-  const { data, error } = await supabase
-    .from('posts')
+    const { data, error } = await supabase
+      .from('posts')
     .insert([{
       user_id: user.id,
       body: sanitizeInput(body),
