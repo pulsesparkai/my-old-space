@@ -10,12 +10,13 @@ import { supabase } from '@/integrations/supabase/client';
 import { ArrowLeft, Check, X } from 'lucide-react';
 import type { ProfileComment, Profile } from '@/types/aliases';
 
-interface EnrichedProfileComment extends ProfileComment {
-  author_profile?: Profile | null;
-}
+type PCWithProfiles = ProfileComment & {
+  author_profile: Profile | null;
+  target_profile: Profile | null;
+};
 
 export default function ProfileCommentModeration() {
-  const [comments, setComments] = useState<EnrichedProfileComment[]>([]);
+  const [comments, setComments] = useState<PCWithProfiles[]>([]);
   const [loading, setLoading] = useState(true);
   const { user } = useAuth();
   const { toast } = useToast();
@@ -33,8 +34,6 @@ export default function ProfileCommentModeration() {
       const { data: pcs, error } = await supabase
         .from('profile_comments')
         .select('*')
-        .eq('target_user_id', user.id)
-        .eq('status', 'pending')
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -45,24 +44,28 @@ export default function ProfileCommentModeration() {
         return;
       }
 
-      // 2) fetch author profiles
-      const authorIds = Array.from(new Set((pcs as ProfileComment[]).map(c => c.author_user_id)));
-      let profilesById = new Map<string, Profile>();
-      if (authorIds.length) {
+      // 2) fetch related profiles (both authors and targets)
+      const userIds = Array.from(new Set(
+        (pcs as ProfileComment[]).flatMap(c => [c.author_user_id, c.target_user_id])
+      ));
+      
+      let byId = new Map<string, Profile>();
+      if (userIds.length) {
         const { data: profiles } = await supabase
           .from('profiles')
           .select('*')
-          .in('user_id', authorIds);
-        (profiles || []).forEach(p => profilesById.set((p as Profile).user_id, p as Profile));
+          .in('user_id', userIds);
+        (profiles || []).forEach(p => byId.set((p as Profile).user_id, p as Profile));
       }
 
       // 3) merge
       const enriched = (pcs as ProfileComment[]).map(c => ({
         ...c,
-        author_profile: profilesById.get(c.author_user_id) || null
+        author_profile: byId.get(c.author_user_id) || null,
+        target_profile: byId.get(c.target_user_id) || null,
       }));
 
-      setComments(enriched as EnrichedProfileComment[]);
+      setComments(enriched);
     } catch (err) {
       console.error('Error fetching pending comments:', err);
     } finally {

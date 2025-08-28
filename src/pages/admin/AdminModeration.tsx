@@ -11,9 +11,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { ArrowLeft, AlertTriangle, Eye, Ban, Trash2 } from 'lucide-react';
 import type { Report, Profile } from '@/types/aliases';
 
-interface EnrichedReport extends Report {
-  reporter_profile?: Profile | null;
-}
+type ReportWithProfile = Report & { reporter_profile: Profile | null };
 
 // This is a placeholder for admin check - implement based on your requirements
 const isUserAdmin = (userId: string): boolean => {
@@ -22,9 +20,9 @@ const isUserAdmin = (userId: string): boolean => {
 };
 
 export default function AdminModeration() {
-  const [reports, setReports] = useState<EnrichedReport[]>([]);
+  const [reports, setReports] = useState<ReportWithProfile[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedReport, setSelectedReport] = useState<EnrichedReport | null>(null);
+  const [selectedReport, setSelectedReport] = useState<ReportWithProfile | null>(null);
   const [actionNotes, setActionNotes] = useState('');
   const { user } = useAuth();
   const { toast } = useToast();
@@ -79,7 +77,7 @@ export default function AdminModeration() {
         reporter_profile: profilesById.get(r.reporter_id) || null
       }));
 
-      setReports(enriched as EnrichedReport[]);
+      setReports(enriched);
     } catch (err) {
       console.error('Error fetching reports:', err);
     } finally {
