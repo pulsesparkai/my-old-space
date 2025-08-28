@@ -35,11 +35,18 @@ A MySpace-inspired social network built with React, TypeScript, Tailwind CSS, an
 
 ## ⚙️ Environment Variables
 
-Create a `.env` file with:
+Create a `.env.local` file with:
 
 ```env
-VITE_SUPABASE_URL=your_supabase_url
-VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
+# Supabase Configuration
+VITE_SUPABASE_URL=https://your-project-id.supabase.co
+VITE_SUPABASE_ANON_KEY=your-anon-key-here
+
+# Resend Email API
+RESEND_API_KEY=your-resend-api-key-here
+
+# Site URL
+VITE_SITE_URL=http://localhost:8080
 ```
 
 ## 🛠️ Setup Instructions
@@ -68,10 +75,27 @@ npm install
 
 ### 4. Authentication Setup
 
-In Supabase Dashboard:
-- **Authentication > Providers**: Enable Email and Google OAuth
+#### Resend Email Configuration
+1. Create account at [Resend](https://resend.com)
+2. Verify your sending domain 
+3. Create API key at [Resend API Keys](https://resend.com/api-keys)
+4. In Supabase → Auth → SMTP:
+   - Host: `smtp.resend.com`
+   - Port: `587`
+   - Username: `resend` (or `apikey`)
+   - Password: Your `RESEND_API_KEY`
+   - From: `Top8.io <info@yourdomain.com>`
+
+#### Google OAuth Setup
+1. Create Google OAuth client in Google Cloud Console
+2. Add authorized redirect URIs:
+   - `http://localhost:8080/auth/callback`
+   - `https://app.top8.io/auth/callback`
+3. Add client ID/secret to Supabase → Auth → Providers → Google
+
+#### Supabase Auth URLs
 - **Authentication > URL Configuration**: 
-  - Site URL: `http://localhost:5173` (local) or your domain
+  - Site URL: `http://localhost:8080` (local) or your domain
   - Redirect URLs: Add your callback URLs
 
 ### 5. Run Locally
@@ -80,7 +104,7 @@ In Supabase Dashboard:
 npm run dev
 ```
 
-Visit `http://localhost:5173`
+Visit `http://localhost:8080`
 
 ## 🌐 Subdomain Routing
 
