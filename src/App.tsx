@@ -18,8 +18,21 @@ import ProfileCommentModeration from "./pages/moderation/ProfileCommentModeratio
 import AdminModeration from "./pages/admin/AdminModeration";
 import UserProfile from "./pages/UserProfile";
 import ProtectedRoute from "./components/ProtectedRoute";
+import { getUsernameFromSubdomain, shouldRedirectToProfile } from "./lib/subdomain";
 
 const queryClient = new QueryClient();
+
+// Component to handle subdomain routing
+const SubdomainHandler = () => {
+  const username = getUsernameFromSubdomain();
+  
+  if (username && shouldRedirectToProfile()) {
+    // Redirect subdomain to profile page
+    return <Navigate to={`/u/${username}`} replace />;
+  }
+  
+  return <Index />;
+};
 
 const AppRouter = () => (
   <QueryClientProvider client={queryClient}>
@@ -29,7 +42,7 @@ const AppRouter = () => (
         <Sonner />
         <BrowserRouter>
           <Routes>
-            <Route path="/" element={<Index />} />
+            <Route path="/" element={<SubdomainHandler />} />
             <Route path="/auth" element={<AuthPage />} />
             <Route path="/auth/callback" element={<AuthCallback />} />
             <Route path="/choose-username" element={<ProtectedRoute><ChooseUsername /></ProtectedRoute>} />
@@ -41,7 +54,6 @@ const AppRouter = () => (
             <Route path="/app/moderation/profile-comments" element={<ProtectedRoute><ProfileCommentModeration /></ProtectedRoute>} />
             <Route path="/admin/moderation" element={<ProtectedRoute><AdminModeration /></ProtectedRoute>} />
             <Route path="/u/:username" element={<UserProfile />} />
-            {/* TODO: Subdomain routing - {username}.top8.io should map to /u/[username] */}
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>

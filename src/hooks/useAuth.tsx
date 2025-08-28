@@ -25,14 +25,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<any | null>(null);
 
   const fetchProfile = async (userId: string) => {
-    const { data } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('user_id', userId)
-      .single();
-    
-    setProfile(data);
-    return data;
+    try {
+      const { data } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('user_id', userId)
+        .single();
+      
+      setProfile(data);
+      return data;
+    } catch (error) {
+      console.error('Error fetching profile:', error);
+      return null;
+    }
   };
 
   const refreshProfile = async () => {

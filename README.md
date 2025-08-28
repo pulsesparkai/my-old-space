@@ -1,73 +1,172 @@
-# Welcome to your Lovable project
+# Top8.io - Nostalgic Social Network
 
-## Project info
+A MySpace-inspired social network built with React, TypeScript, Tailwind CSS, and Supabase.
 
-**URL**: https://lovable.dev/projects/44752b63-a1c3-4762-af26-dadacee10540
+## 🌟 Features
 
-## How can I edit this code?
+- **User Authentication**: Email magic links + Google OAuth
+- **Custom Profiles**: Themed profiles with custom backgrounds and colors  
+- **Subdomain Profiles**: Access profiles via `{username}.top8.io`
+- **Posts & Comments**: Share updates with friends
+- **Profile Comments (Guestbook)**: Classic MySpace-style profile commenting
+- **Friendship System**: Send/accept friend requests
+- **Notifications**: Real-time updates for interactions
+- **Moderation Tools**: Content reporting and admin moderation
+- **Security**: Rate limiting, content sanitization, RLS policies
 
-There are several ways of editing your application.
+## 🚀 Tech Stack
 
-**Use Lovable**
+- **Frontend**: React 18, TypeScript, Tailwind CSS, Vite
+- **Backend**: Supabase (PostgreSQL, Auth, Storage, RLS)
+- **UI Components**: shadcn/ui
+- **Forms**: React Hook Form + Zod validation
+- **Routing**: React Router DOM
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/44752b63-a1c3-4762-af26-dadacee10540) and start prompting.
+## 📋 Database Schema
 
-Changes made via Lovable will be committed automatically to this repo.
+- `profiles` - User profiles with themes and display info
+- `posts` - User posts with visibility controls
+- `comments` - Post comments
+- `friendships` - Friend relationships with status
+- `profile_comments` - Profile guestbook comments with moderation
+- `notifications` - User notifications
+- `reports` - Content reporting system
+- `username_redirects` - Username change history
 
-**Use your preferred IDE**
+## ⚙️ Environment Variables
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+Create a `.env` file with:
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+```env
+VITE_SUPABASE_URL=your_supabase_url
+VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
+```
 
-Follow these steps:
+## 🛠️ Setup Instructions
 
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
+### 1. Clone and Install
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
+```bash
+git clone <your-repo>
+cd top8-social-network
+npm install
+```
 
-# Step 3: Install the necessary dependencies.
-npm i
+### 2. Supabase Setup
 
-# Step 4: Start the development server with auto-reloading and an instant preview.
+1. Create a new Supabase project at [supabase.com](https://supabase.com)
+2. The database schema is already created in this project
+3. Configure authentication providers (Email + Google OAuth)
+4. Set up storage bucket for images (already configured)
+5. RLS policies are already in place
+
+### 3. Environment Configuration
+
+1. Copy `.env.example` to `.env`
+2. Fill in your Supabase credentials from your project settings
+3. Configure authentication redirect URLs in Supabase dashboard
+
+### 4. Authentication Setup
+
+In Supabase Dashboard:
+- **Authentication > Providers**: Enable Email and Google OAuth
+- **Authentication > URL Configuration**: 
+  - Site URL: `http://localhost:5173` (local) or your domain
+  - Redirect URLs: Add your callback URLs
+
+### 5. Run Locally
+
+```bash
 npm run dev
 ```
 
-**Edit a file directly in GitHub**
+Visit `http://localhost:5173`
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+## 🌐 Subdomain Routing
 
-**Use GitHub Codespaces**
+The app supports subdomain routing where `{username}.top8.io` automatically redirects to `/u/{username}`. 
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+**For Production:**
+1. Set up wildcard DNS: `*.top8.io` → your server IP
+2. Configure your hosting to handle wildcard subdomains
+3. The client-side routing will automatically detect and redirect
 
-## What technologies are used for this project?
+**Reserved Subdomains:**
+- `app`, `auth`, `api`, `admin`, `cdn`, `img`, `static`, `www`, `support`, `status`, `mail`, `m`, `dev`, `test`, `stage`
 
-This project is built with:
+## 🚀 Deployment
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+### Vercel (Recommended)
 
-## How can I deploy this project?
+1. Connect your GitHub repo to Vercel
+2. Set environment variables in Vercel dashboard
+3. For subdomain support:
+   - Add your custom domain (e.g., `top8.io`)
+   - Configure wildcard subdomain: `*.top8.io`
+4. Deploy automatically on push to main
 
-Simply open [Lovable](https://lovable.dev/projects/44752b63-a1c3-4762-af26-dadacee10540) and click on Share -> Publish.
+### Other Platforms
 
-## Can I connect a custom domain to my Lovable project?
+The app is a standard Vite React app and can be deployed to:
+- Netlify (with wildcard domain support)
+- Railway
+- Heroku
+- Any static hosting service with custom domain support
 
-Yes, you can!
+## 📱 Features Overview
 
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
+### Authentication
+- Magic link email authentication
+- Google OAuth integration
+- Protected routes with automatic redirects
+- Username selection after first login
 
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/tips-tricks/custom-domain#step-by-step-guide)
+### Profile System
+- Customizable themes (colors, backgrounds)
+- Avatar uploads via Supabase Storage
+- Bio and display name customization
+- Username changes (limited to one)
+- Subdomain access: `username.top8.io`
+
+### Social Features
+- Public/friends-only posts
+- Real-time notifications
+- Friend request system
+- Profile commenting with moderation queue
+
+### Security & Moderation
+- Rate limiting on all write operations
+- Content sanitization (DOMPurify)
+- Row Level Security (RLS) policies
+- Content reporting system
+- Admin moderation interface
+
+## 📁 File Structure
+
+```
+src/
+├── components/         # Reusable UI components
+├── hooks/             # Custom React hooks (useAuth)
+├── lib/               # Utility functions (auth, validation, subdomain)
+├── pages/             # Route components
+│   ├── settings/      # Settings pages
+│   ├── moderation/    # Moderation tools
+│   └── admin/         # Admin interfaces
+└── integrations/      # Supabase client and types
+```
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Test thoroughly
+5. Submit a pull request
+
+## 📄 License
+
+MIT License - see LICENSE file for details
+
+---
+
+**Built with ❤️ for the nostalgic internet era**

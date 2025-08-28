@@ -39,26 +39,34 @@ export const signOut = async () => {
 };
 
 export const getProfile = async (userId: string) => {
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('*')
-    .eq('user_id', userId)
-    .single();
-    
-  return { data, error };
+  try {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('user_id', userId)
+      .single();
+      
+    return { data, error };
+  } catch (error) {
+    return { data: null, error };
+  }
 };
 
 export const createProfile = async (userId: string, username: string) => {
-  const { data, error } = await supabase
-    .from('profiles')
-    .insert([{
-      user_id: userId,
-      username,
-      display_name: '',
-      bio: ''
-    }])
-    .select()
-    .single();
-    
-  return { data, error };
+  try {
+    const { data, error } = await supabase
+      .from('profiles')
+      .insert([{
+        user_id: userId,
+        username,
+        display_name: '',
+        bio: ''
+      }])
+      .select()
+      .single();
+      
+    return { data, error };
+  } catch (error) {
+    return { data: null, error };
+  }
 };
