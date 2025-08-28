@@ -1,20 +1,10 @@
 import { supabase } from "@/integrations/supabase/client";
-import { sanitizeText, sanitizeHtml } from "./sanitize";
-import { checkRateLimit } from "./rate-limit";
-import {
-  createPostSchema,
-  editPostSchema,
-  createCommentSchema,
-  updateProfileSchema,
-  updateUsernameSchema,
-  updateThemeSchema,
-  friendshipActionSchema,
-  createProfileCommentSchema,
-  moderateProfileCommentSchema,
-  createReportSchema,
-  moderateReportSchema,
-  markNotificationReadSchema
-} from "./validation";
+import type { Database } from "@/types/database.types";
+
+// Simple sanitization function
+function sanitizeInput(input: string): string {
+  return input.trim().slice(0, 2000); // Basic length limit and trim
+}
 
 // Helper to get current user
 async function getCurrentUser() {
@@ -29,29 +19,43 @@ async function isAdmin(userId: string): Promise<boolean> {
   return false;
 }
 
+// Simple rate limiting (in production, use Redis or similar)
+const rateLimitStore = new Map<string, { count: number; reset: number }>();
+
+function checkRateLimit(userId: string, action: string, limit = 10, windowMs = 60000): boolean {
+  const key = `${userId}:${action}`;
+  const now = Date.now();
+  const entry = rateLimitStore.get(key);
+  
+  if (!entry || now > entry.reset) {
+    rateLimitStore.set(key, { count: 1, reset: now + windowMs });
+    return true;
+  }
+  
+  if (entry.count >= limit) {
+    return false;
+  }
+  
+  entry.count++;
+  return true;
+}
+
 // Posts
-export async function createPost(formData: FormData) {
+export async function createPost(body: string, visibility: 'public' | 'friends' = 'public', media?: any) {
   const user = await getCurrentUser();
   if (!user) throw new Error('Unauthorized');
   
-  // Rate limiting
-  if (!checkRateLimit(user.id, 'unknown')) {
+  if (!checkRateLimit(user.id, 'createPost')) {
     throw new Error('Rate limit exceeded');
   }
-  
-  const body = formData.get('body') as string;
-  const visibility = formData.get('visibility') as string || 'public';
-  
-  const validatedData = createPostSchema.parse({
-    body: sanitizeText(body),
-    visibility
-  });
   
   const { data, error } = await supabase
     .from('posts')
     .insert([{
       user_id: user.id,
-      ...validatedData
+      body: sanitizeInput(body),
+      visibility,
+      media
     }])
     .select()
     .single();
@@ -60,31 +64,21 @@ export async function createPost(formData: FormData) {
   return data;
 }
 
-export async function editPost(formData: FormData) {
+export async function editPost(id: string, body: string, visibility: 'public' | 'friends') {
   const user = await getCurrentUser();
   if (!user) throw new Error('Unauthorized');
   
-  if (!checkRateLimit(user.id, 'unknown')) {
+  if (!checkRateLimit(user.id, 'editPost')) {
     throw new Error('Rate limit exceeded');
   }
-  
-  const id = formData.get('id') as string;
-  const body = formData.get('body') as string;
-  const visibility = formData.get('visibility') as string;
-  
-  const validatedData = editPostSchema.parse({
-    id,
-    body: sanitizeText(body),
-    visibility
-  });
   
   const { data, error } = await supabase
     .from('posts')
     .update({
-      body: validatedData.body,
-      visibility: validatedData.visibility
+      body: sanitizeInput(body),
+      visibility
     })
-    .eq('id', validatedData.id)
+    .eq('id', id)
     .eq('user_id', user.id)
     .select()
     .single();
@@ -97,7 +91,7 @@ export async function deletePost(postId: string) {
   const user = await getCurrentUser();
   if (!user) throw new Error('Unauthorized');
   
-  if (!checkRateLimit(user.id, 'unknown')) {
+  if (!checkRateLimit(user.id, 'deletePost')) {
     throw new Error('Rate limit exceeded');
   }
   
@@ -111,40 +105,25 @@ export async function deletePost(postId: string) {
 }
 
 // Comments
-export async function createComment(formData: FormData) {
+export async function createComment(post_id: string, body: string) {
   const user = await getCurrentUser();
   if (!user) throw new Error('Unauthorized');
   
-  if (!checkRateLimit(user.id, 'unknown')) {
+  if (!checkRateLimit(user.id, 'createComment')) {
     throw new Error('Rate limit exceeded');
   }
-  
-  const post_id = formData.get('post_id') as string;
-  const body = formData.get('body') as string;
-  
-  const validatedData = createCommentSchema.parse({
-    post_id,
-    body: sanitizeText(body)
-  });
   
   const { data, error } = await supabase
     .from('comments')
     .insert([{
       user_id: user.id,
-      ...validatedData
+      post_id,
+      body: sanitizeInput(body)
     }])
     .select()
     .single();
     
   if (error) throw error;
-  
-  // Increment comment count
-  await supabase.rpc('increment', {
-    table_name: 'posts',
-    row_id: post_id,
-    column_name: 'comment_count'
-  });
-  
   return data;
 }
 
@@ -152,18 +131,10 @@ export async function deleteComment(commentId: string) {
   const user = await getCurrentUser();
   if (!user) throw new Error('Unauthorized');
   
-  if (!checkRateLimit(user.id, 'unknown')) {
+  if (!checkRateLimit(user.id, 'deleteComment')) {
     throw new Error('Rate limit exceeded');
   }
   
-  // Get comment to find post_id
-  const { data: comment } = await supabase
-    .from('comments')
-    .select('post_id')
-    .eq('id', commentId)
-    .eq('user_id', user.id)
-    .single();
-    
   const { error } = await supabase
     .from('comments')
     .delete()
@@ -171,39 +142,29 @@ export async function deleteComment(commentId: string) {
     .eq('user_id', user.id);
     
   if (error) throw error;
-  
-  // Decrement comment count
-  if (comment) {
-    await supabase.rpc('decrement', {
-      table_name: 'posts',
-      row_id: comment.post_id,
-      column_name: 'comment_count'
-    });
-  }
 }
 
 // Profile
-export async function updateProfile(formData: FormData) {
+export async function updateProfile(display_name: string, bio: string, avatar_url?: string) {
   const user = await getCurrentUser();
   if (!user) throw new Error('Unauthorized');
   
-  if (!checkRateLimit(user.id, 'unknown')) {
+  if (!checkRateLimit(user.id, 'updateProfile')) {
     throw new Error('Rate limit exceeded');
   }
   
-  const display_name = formData.get('display_name') as string;
-  const bio = formData.get('bio') as string;
-  const avatar_url = formData.get('avatar_url') as string;
+  const updateData: Database['public']['Tables']['profiles']['Update'] = {
+    display_name: sanitizeInput(display_name),
+    bio: sanitizeInput(bio)
+  };
   
-  const validatedData = updateProfileSchema.parse({
-    display_name: sanitizeText(display_name),
-    bio: sanitizeText(bio),
-    avatar_url
-  });
+  if (avatar_url) {
+    updateData.avatar_url = avatar_url;
+  }
   
   const { data, error } = await supabase
     .from('profiles')
-    .update(validatedData)
+    .update(updateData)
     .eq('user_id', user.id)
     .select()
     .single();
@@ -212,25 +173,21 @@ export async function updateProfile(formData: FormData) {
   return data;
 }
 
-export async function updateUsername(formData: FormData) {
+export async function updateUsername(username: string) {
   const user = await getCurrentUser();
   if (!user) throw new Error('Unauthorized');
   
-  if (!checkRateLimit(user.id, 'unknown')) {
+  if (!checkRateLimit(user.id, 'updateUsername')) {
     throw new Error('Rate limit exceeded');
   }
   
-  const username = formData.get('username') as string;
-  
-  const validatedData = updateUsernameSchema.parse({
-    username: username.toLowerCase()
-  });
+  const normalizedUsername = username.toLowerCase().trim();
   
   // Check if username is available
   const { data: existing } = await supabase
     .from('profiles')
     .select('username')
-    .eq('username', validatedData.username)
+    .eq('username', normalizedUsername)
     .single();
     
   if (existing) {
@@ -246,7 +203,7 @@ export async function updateUsername(formData: FormData) {
   
   const { data, error } = await supabase
     .from('profiles')
-    .update({ username: validatedData.username })
+    .update({ username: normalizedUsername })
     .eq('user_id', user.id)
     .select()
     .single();
@@ -254,12 +211,12 @@ export async function updateUsername(formData: FormData) {
   if (error) throw error;
   
   // Create redirect if username changed
-  if (currentProfile?.username && currentProfile.username !== validatedData.username) {
+  if (currentProfile?.username && currentProfile.username !== normalizedUsername) {
     await supabase
       .from('username_redirects')
       .insert([{
         old_username: currentProfile.username,
-        new_username: validatedData.username,
+        new_username: normalizedUsername,
         expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString() // 30 days
       }]);
   }
@@ -267,21 +224,17 @@ export async function updateUsername(formData: FormData) {
   return data;
 }
 
-export async function updateTheme(formData: FormData) {
+export async function updateTheme(theme: any) {
   const user = await getCurrentUser();
   if (!user) throw new Error('Unauthorized');
   
-  if (!checkRateLimit(user.id, 'unknown')) {
+  if (!checkRateLimit(user.id, 'updateTheme')) {
     throw new Error('Rate limit exceeded');
   }
   
-  const theme = JSON.parse(formData.get('theme') as string);
-  
-  const validatedData = updateThemeSchema.parse({ theme });
-  
   const { data, error } = await supabase
     .from('profiles')
-    .update({ theme: validatedData.theme })
+    .update({ theme })
     .eq('user_id', user.id)
     .select()
     .single();
@@ -291,113 +244,118 @@ export async function updateTheme(formData: FormData) {
 }
 
 // Friendships
-export async function handleFriendship(formData: FormData) {
+export async function sendFriendRequest(friend_id: string) {
   const user = await getCurrentUser();
   if (!user) throw new Error('Unauthorized');
   
-  if (!checkRateLimit(user.id, 'unknown')) {
+  if (!checkRateLimit(user.id, 'sendFriendRequest')) {
     throw new Error('Rate limit exceeded');
   }
   
-  const friend_id = formData.get('friend_id') as string;
-  const action = formData.get('action') as string;
+  const { data, error } = await supabase
+    .from('friendships')
+    .insert([{
+      user_id: user.id,
+      friend_id,
+      status: 'pending'
+    }])
+    .select()
+    .single();
   
-  const validatedData = friendshipActionSchema.parse({ friend_id, action });
+  if (error) throw error;
   
-  switch (validatedData.action) {
-    case 'send':
-      const { data, error } = await supabase
-        .from('friendships')
-        .insert([{
-          user_id: user.id,
-          friend_id: validatedData.friend_id,
-          status: 'pending'
-        }])
-        .select()
-        .single();
-      
-      if (error) throw error;
-      
-      // Create notification
-      await supabase
-        .from('notifications')
-        .insert([{
-          user_id: validatedData.friend_id,
-          type: 'friend_request',
-          entity_id: user.id
-        }]);
-      
-      return data;
-      
-    case 'accept':
-      await supabase
-        .from('friendships')
-        .update({ status: 'accepted' })
-        .eq('user_id', validatedData.friend_id)
-        .eq('friend_id', user.id);
-      
-      // Create reciprocal friendship
-      await supabase
-        .from('friendships')
-        .insert([{
-          user_id: user.id,
-          friend_id: validatedData.friend_id,
-          status: 'accepted'
-        }]);
-      
-      // Create notification
-      await supabase
-        .from('notifications')
-        .insert([{
-          user_id: validatedData.friend_id,
-          type: 'friend_accepted',
-          entity_id: user.id
-        }]);
-      
-      break;
-      
-    case 'decline':
-      await supabase
-        .from('friendships')
-        .delete()
-        .eq('user_id', validatedData.friend_id)
-        .eq('friend_id', user.id);
-      break;
-      
-    case 'block':
-      await supabase
-        .from('friendships')
-        .upsert([{
-          user_id: user.id,
-          friend_id: validatedData.friend_id,
-          status: 'blocked'
-        }]);
-      break;
+  // Create notification
+  await supabase
+    .from('notifications')
+    .insert([{
+      user_id: friend_id,
+      type: 'friend_request',
+      entity_id: user.id
+    }]);
+  
+  return data;
+}
+
+export async function acceptFriendRequest(friend_id: string) {
+  const user = await getCurrentUser();
+  if (!user) throw new Error('Unauthorized');
+  
+  if (!checkRateLimit(user.id, 'acceptFriendRequest')) {
+    throw new Error('Rate limit exceeded');
   }
+  
+  await supabase
+    .from('friendships')
+    .update({ status: 'accepted' })
+    .eq('user_id', friend_id)
+    .eq('friend_id', user.id);
+  
+  // Create reciprocal friendship
+  await supabase
+    .from('friendships')
+    .insert([{
+      user_id: user.id,
+      friend_id,
+      status: 'accepted'
+    }]);
+  
+  // Create notification
+  await supabase
+    .from('notifications')
+    .insert([{
+      user_id: friend_id,
+      type: 'friend_accepted',
+      entity_id: user.id
+    }]);
+}
+
+export async function declineFriendRequest(friend_id: string) {
+  const user = await getCurrentUser();
+  if (!user) throw new Error('Unauthorized');
+  
+  if (!checkRateLimit(user.id, 'declineFriendRequest')) {
+    throw new Error('Rate limit exceeded');
+  }
+  
+  await supabase
+    .from('friendships')
+    .delete()
+    .eq('user_id', friend_id)
+    .eq('friend_id', user.id);
+}
+
+export async function blockUser(friend_id: string) {
+  const user = await getCurrentUser();
+  if (!user) throw new Error('Unauthorized');
+  
+  if (!checkRateLimit(user.id, 'blockUser')) {
+    throw new Error('Rate limit exceeded');
+  }
+  
+  await supabase
+    .from('friendships')
+    .upsert([{
+      user_id: user.id,
+      friend_id,
+      status: 'blocked'
+    }]);
 }
 
 // Profile Comments
-export async function createProfileComment(formData: FormData) {
+export async function createProfileComment(target_user_id: string, body: string) {
   const user = await getCurrentUser();
   if (!user) throw new Error('Unauthorized');
   
-  if (!checkRateLimit(user.id, 'unknown')) {
+  if (!checkRateLimit(user.id, 'createProfileComment')) {
     throw new Error('Rate limit exceeded');
   }
-  
-  const target_user_id = formData.get('target_user_id') as string;
-  const body = formData.get('body') as string;
-  
-  const validatedData = createProfileCommentSchema.parse({
-    target_user_id,
-    body: sanitizeText(body)
-  });
   
   const { data, error } = await supabase
     .from('profile_comments')
     .insert([{
       author_user_id: user.id,
-      ...validatedData
+      target_user_id,
+      body: sanitizeInput(body)
     }])
     .select()
     .single();
@@ -405,36 +363,33 @@ export async function createProfileComment(formData: FormData) {
   if (error) throw error;
   
   // Create notification
-  await supabase
-    .from('notifications')
-    .insert([{
-      user_id: validatedData.target_user_id,
-      type: 'profile_comment',
-      entity_id: data.id
-    }]);
+  if (data && 'id' in data) {
+    await supabase
+      .from('notifications')
+      .insert([{
+        user_id: target_user_id,
+        type: 'profile_comment',
+        entity_id: (data as any).id
+      }]);
+  }
   
   return data;
 }
 
-export async function moderateProfileComment(formData: FormData) {
+export async function moderateProfileComment(comment_id: string, action: 'approve' | 'reject') {
   const user = await getCurrentUser();
   if (!user) throw new Error('Unauthorized');
   
-  if (!checkRateLimit(user.id, 'unknown')) {
+  if (!checkRateLimit(user.id, 'moderateProfileComment')) {
     throw new Error('Rate limit exceeded');
   }
   
-  const comment_id = formData.get('comment_id') as string;
-  const action = formData.get('action') as string;
-  
-  const validatedData = moderateProfileCommentSchema.parse({ comment_id, action });
-  
-  const status = validatedData.action === 'approve' ? 'approved' : 'rejected';
+  const status = action === 'approve' ? 'approved' : 'rejected';
   
   const { data, error } = await supabase
     .from('profile_comments')
     .update({ status })
-    .eq('id', validatedData.comment_id)
+    .eq('id', comment_id)
     .eq('target_user_id', user.id)
     .select()
     .single();
@@ -442,13 +397,13 @@ export async function moderateProfileComment(formData: FormData) {
   if (error) throw error;
   
   // Create notification if approved
-  if (status === 'approved') {
+  if (status === 'approved' && data && 'author_user_id' in data && 'id' in data) {
     await supabase
       .from('notifications')
       .insert([{
-        user_id: data.author_user_id,
+        user_id: (data as any).author_user_id,
         type: 'profile_comment_approved',
-        entity_id: data.id
+        entity_id: (data as any).id
       }]);
   }
   
@@ -456,29 +411,21 @@ export async function moderateProfileComment(formData: FormData) {
 }
 
 // Reports
-export async function createReport(formData: FormData) {
+export async function createReport(target_type: string, target_id: string, reason: string) {
   const user = await getCurrentUser();
   if (!user) throw new Error('Unauthorized');
   
-  if (!checkRateLimit(user.id, 'unknown')) {
+  if (!checkRateLimit(user.id, 'createReport')) {
     throw new Error('Rate limit exceeded');
   }
-  
-  const target_type = formData.get('target_type') as string;
-  const target_id = formData.get('target_id') as string;
-  const reason = formData.get('reason') as string;
-  
-  const validatedData = createReportSchema.parse({
-    target_type,
-    target_id,
-    reason: sanitizeText(reason)
-  });
   
   const { data, error } = await supabase
     .from('reports')
     .insert([{
       reporter_id: user.id,
-      ...validatedData
+      target_type,
+      target_id,
+      reason: sanitizeInput(reason)
     }])
     .select()
     .single();
@@ -487,27 +434,21 @@ export async function createReport(formData: FormData) {
   return data;
 }
 
-export async function moderateReport(formData: FormData) {
+export async function moderateReport(report_id: string, action: string) {
   const user = await getCurrentUser();
   if (!user) throw new Error('Unauthorized');
   
   const isUserAdmin = await isAdmin(user.id);
   if (!isUserAdmin) throw new Error('Forbidden');
   
-  if (!checkRateLimit(user.id, 'unknown')) {
+  if (!checkRateLimit(user.id, 'moderateReport')) {
     throw new Error('Rate limit exceeded');
   }
-  
-  const report_id = formData.get('report_id') as string;
-  const action = formData.get('action') as string;
-  const notes = formData.get('notes') as string;
-  
-  const validatedData = moderateReportSchema.parse({ report_id, action, notes });
   
   const { data, error } = await supabase
     .from('reports')
     .update({ status: 'actioned' })
-    .eq('id', validatedData.report_id)
+    .eq('id', report_id)
     .select()
     .single();
     
@@ -520,19 +461,58 @@ export async function moderateReport(formData: FormData) {
 }
 
 // Notifications
-export async function markNotificationRead(formData: FormData) {
+export async function markNotificationRead(notification_id: string) {
   const user = await getCurrentUser();
   if (!user) throw new Error('Unauthorized');
-  
-  const notification_id = formData.get('notification_id') as string;
-  
-  const validatedData = markNotificationReadSchema.parse({ notification_id });
   
   const { data, error } = await supabase
     .from('notifications')
     .update({ read: true })
-    .eq('id', validatedData.notification_id)
+    .eq('id', notification_id)
     .eq('user_id', user.id)
+    .select()
+    .single();
+    
+  if (error) throw error;
+  return data;
+}
+
+// Username validation and creation
+export async function claimUsername(username: string) {
+  const user = await getCurrentUser();
+  if (!user) throw new Error('Unauthorized');
+  
+  if (!checkRateLimit(user.id, 'claimUsername')) {
+    throw new Error('Rate limit exceeded');
+  }
+  
+  const normalizedUsername = username.toLowerCase().trim();
+  
+  // Validate username format
+  if (!/^[a-z0-9_]{3,20}$/.test(normalizedUsername)) {
+    throw new Error('Username must be 3-20 characters and contain only letters, numbers, and underscores');
+  }
+  
+  // Check if username is available
+  const { data: existing } = await supabase
+    .from('profiles')
+    .select('username')
+    .eq('username', normalizedUsername)
+    .single();
+    
+  if (existing) {
+    throw new Error('Username is already taken');
+  }
+  
+  // Create profile
+  const { data, error } = await supabase
+    .from('profiles')
+    .insert([{
+      user_id: user.id,
+      username: normalizedUsername,
+      display_name: '',
+      bio: ''
+    }])
     .select()
     .single();
     

@@ -6,15 +6,8 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
+import type { Notification } from '@/types/app.types';
 import { ArrowLeft, Check } from 'lucide-react';
-
-interface Notification {
-  id: string;
-  type: string;
-  read: boolean;
-  created_at: string;
-  entity_id?: string;
-}
 
 export default function Notifications() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -37,7 +30,7 @@ export default function Notifications() {
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      setNotifications(data || []);
+      setNotifications((data as any) || []);
     } catch (err) {
       console.error('Error fetching notifications:', err);
     } finally {

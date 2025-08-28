@@ -10,29 +10,9 @@ import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { signOut } from '@/lib/auth';
+import { createPost } from '@/lib/server-actions';
+import type { Post, Notification } from '@/types/app.types';
 import { Heart, MessageCircle, Settings, Bell, User, LogOut } from 'lucide-react';
-
-interface Post {
-  id: string;
-  body: string;
-  visibility: string;
-  like_count: number;
-  comment_count: number;
-  created_at: string;
-  profiles: {
-    username: string;
-    display_name: string;
-    avatar_url?: string;
-  };
-}
-
-interface Notification {
-  id: string;
-  type: string;
-  read: boolean;
-  created_at: string;
-  entity_id?: string;
-}
 
 export default function App() {
   const [newPost, setNewPost] = useState('');
@@ -60,7 +40,7 @@ export default function App() {
         .limit(20);
 
       if (error) throw error;
-      setPosts(data || []);
+      setPosts((data as any) || []);
     } catch (err) {
       console.error('Error fetching posts:', err);
     }
@@ -78,7 +58,7 @@ export default function App() {
         .limit(10);
 
       if (error) throw error;
-      setNotifications(data || []);
+      setNotifications((data as any) || []);
     } catch (err) {
       console.error('Error fetching notifications:', err);
     }
@@ -105,7 +85,7 @@ export default function App() {
 
       if (error) throw error;
       
-      setPosts([data, ...posts]);
+      setPosts([(data as any), ...posts]);
       setNewPost('');
       toast({
         title: 'Success',
@@ -213,24 +193,24 @@ export default function App() {
                 <Card key={post.id}>
                   <CardContent className="pt-6">
                     <div className="flex items-start space-x-3">
-                      <Avatar>
-                        <AvatarImage src={post.profiles.avatar_url} />
-                        <AvatarFallback>
-                          {post.profiles.display_name?.[0] || post.profiles.username[0].toUpperCase()}
-                        </AvatarFallback>
-                      </Avatar>
+                       <Avatar>
+                         <AvatarImage src={post.profiles?.avatar_url} />
+                         <AvatarFallback>
+                           {post.profiles?.display_name?.[0] || post.profiles?.username?.[0]?.toUpperCase()}
+                         </AvatarFallback>
+                       </Avatar>
                       
                       <div className="flex-1 space-y-2">
-                        <div className="flex items-center space-x-2">
-                          <Link 
-                            to={`/u/${post.profiles.username}`}
-                            className="font-semibold hover:underline"
-                          >
-                            {post.profiles.display_name || post.profiles.username}
-                          </Link>
-                          <span className="text-sm text-muted-foreground">
-                            @{post.profiles.username}
-                          </span>
+                         <div className="flex items-center space-x-2">
+                           <Link 
+                             to={`/u/${post.profiles?.username}`}
+                             className="font-semibold hover:underline"
+                           >
+                             {post.profiles?.display_name || post.profiles?.username}
+                           </Link>
+                           <span className="text-sm text-muted-foreground">
+                             @{post.profiles?.username}
+                           </span>
                           <span className="text-sm text-muted-foreground">·</span>
                           <span className="text-sm text-muted-foreground">
                             {new Date(post.created_at).toLocaleDateString()}

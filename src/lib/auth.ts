@@ -1,5 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 import type { User, Session } from "@supabase/supabase-js";
+import type { Database } from "@/types/database.types";
 
 export interface AuthState {
   user: User | null;
