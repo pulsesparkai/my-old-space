@@ -7,14 +7,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
-
-interface Profile {
-  username: string;
-  display_name: string;
-  bio: string;
-  avatar_url?: string;
-  theme: any;
-}
+import type { Profile } from '@/types/aliases';
 
 export default function UserProfile() {
   const { username } = useParams<{ username: string }>();
@@ -29,10 +22,15 @@ export default function UserProfile() {
   useEffect(() => {
     if (username) {
       fetchProfile();
+    }
+  }, [username]);
+
+  useEffect(() => {
+    if (profile) {
       fetchPosts();
       fetchProfileComments();
     }
-  }, [username]);
+  }, [profile]);
 
   const fetchProfile = async () => {
     try {
@@ -52,11 +50,13 @@ export default function UserProfile() {
   };
 
   const fetchPosts = async () => {
+    if (!profile) return;
+    
     try {
       const { data } = await supabase
         .from('posts')
         .select('*')
-        .eq('user_id', profile?.user_id)
+        .eq('user_id', profile.user_id)
         .order('created_at', { ascending: false })
         .limit(10);
       setPosts(data || []);
@@ -66,14 +66,39 @@ export default function UserProfile() {
   };
 
   const fetchProfileComments = async () => {
+    if (!profile) return;
+    
     try {
-      const { data } = await supabase
+      // 1) fetch profile comments
+      const { data: pcs } = await supabase
         .from('profile_comments')
-        .select(`*, profiles!profile_comments_author_user_id_fkey(username, display_name, avatar_url)`)
-        .eq('target_user_id', profile?.user_id)
+        .select('*')
+        .eq('target_user_id', profile.user_id)
         .eq('status', 'approved')
         .order('created_at', { ascending: false });
-      setProfileComments(data || []);
+
+      if (!pcs?.length) {
+        setProfileComments([]);
+        return;
+      }
+
+      // 2) fetch author profiles
+      const authorIds = Array.from(new Set(pcs.map(c => c.author_user_id)));
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('*')
+        .in('user_id', authorIds);
+
+      const profilesById = new Map();
+      (profiles || []).forEach(p => profilesById.set(p.user_id, p));
+
+      // 3) merge
+      const enriched = pcs.map(c => ({
+        ...c,
+        profiles: profilesById.get(c.author_user_id) || null
+      }));
+
+      setProfileComments(enriched);
     } catch (err) {
       console.error('Error fetching profile comments:', err);
     }

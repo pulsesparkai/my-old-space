@@ -9,19 +9,10 @@ import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { ArrowLeft, AlertTriangle, Eye, Ban, Trash2 } from 'lucide-react';
+import type { Report, Profile } from '@/types/aliases';
 
-interface Report {
-  id: string;
-  target_type: string;
-  target_id: string;
-  reason: string;
-  status: string;
-  created_at: string;
-  reporter_id: string;
-  reporter: {
-    username: string;
-    display_name: string;
-  };
+interface EnrichedReport extends Report {
+  reporter_profile?: Profile | null;
 }
 
 // This is a placeholder for admin check - implement based on your requirements
@@ -31,9 +22,9 @@ const isUserAdmin = (userId: string): boolean => {
 };
 
 export default function AdminModeration() {
-  const [reports, setReports] = useState<Report[]>([]);
+  const [reports, setReports] = useState<EnrichedReport[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedReport, setSelectedReport] = useState<Report | null>(null);
+  const [selectedReport, setSelectedReport] = useState<EnrichedReport | null>(null);
   const [actionNotes, setActionNotes] = useState('');
   const { user } = useAuth();
   const { toast } = useToast();
@@ -56,17 +47,38 @@ export default function AdminModeration() {
 
   const fetchReports = async () => {
     try {
-      const { data, error } = await supabase
+      // 1) fetch reports
+      const { data: reports, error: rErr } = await supabase
         .from('reports')
-        .select(`
-          *,
-          reporter:profiles!reports_reporter_id_fkey (username, display_name)
-        `)
+        .select('*')
         .eq('status', 'open')
         .order('created_at', { ascending: false });
 
-      if (error) throw error;
-      setReports(data || []);
+      if (rErr) throw rErr;
+
+      if (!reports?.length) {
+        setReports([]);
+        setLoading(false);
+        return;
+      }
+
+      // 2) fetch reporter profiles
+      const reporterIds = Array.from(new Set(reports.map(r => r.reporter_id)));
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('*')
+        .in('user_id', reporterIds);
+
+      const profilesById = new Map<string, Profile>();
+      (profiles || []).forEach(p => profilesById.set(p.user_id, p));
+
+      // 3) merge
+      const enriched = reports.map(r => ({
+        ...r,
+        reporter_profile: profilesById.get(r.reporter_id) || null
+      }));
+
+      setReports(enriched);
     } catch (err) {
       console.error('Error fetching reports:', err);
     } finally {
@@ -163,7 +175,7 @@ export default function AdminModeration() {
                         {getTargetTypeLabel(report.target_type)} Report
                       </CardTitle>
                       <p className="text-sm text-muted-foreground">
-                        Reported by @{report.reporter?.username} • {new Date(report.created_at).toLocaleString()}
+                        Reported by @{report.reporter_profile?.username} • {new Date(report.created_at).toLocaleString()}
                       </p>
                     </div>
                     <Badge variant="outline">Open</Badge>
@@ -200,7 +212,7 @@ export default function AdminModeration() {
                               <div className="text-sm space-y-1">
                                 <p><span className="font-medium">Type:</span> {getTargetTypeLabel(report.target_type)}</p>
                                 <p><span className="font-medium">ID:</span> {report.target_id}</p>
-                                <p><span className="font-medium">Reporter:</span> @{report.reporter?.username}</p>
+                                <p><span className="font-medium">Reporter:</span> @{report.reporter_profile?.username}</p>
                                 <p><span className="font-medium">Date:</span> {new Date(report.created_at).toLocaleString()}</p>
                               </div>
                             </div>

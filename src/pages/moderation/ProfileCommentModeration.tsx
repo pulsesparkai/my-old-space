@@ -8,22 +8,14 @@ import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { ArrowLeft, Check, X } from 'lucide-react';
+import type { ProfileComment, Profile } from '@/types/aliases';
 
-interface ProfileComment {
-  id: string;
-  body: string;
-  status: string;
-  created_at: string;
-  author_user_id: string;
-  profiles: {
-    username: string;
-    display_name: string;
-    avatar_url?: string;
-  };
+interface EnrichedProfileComment extends ProfileComment {
+  author_profile?: Profile | null;
 }
 
 export default function ProfileCommentModeration() {
-  const [comments, setComments] = useState<ProfileComment[]>([]);
+  const [comments, setComments] = useState<EnrichedProfileComment[]>([]);
   const [loading, setLoading] = useState(true);
   const { user } = useAuth();
   const { toast } = useToast();
@@ -37,18 +29,39 @@ export default function ProfileCommentModeration() {
     if (!user) return;
 
     try {
-      const { data, error } = await supabase
+      // 1) fetch profile comments
+      const { data: pcs, error } = await supabase
         .from('profile_comments')
-        .select(`
-          *,
-          profiles!profile_comments_author_user_id_fkey (username, display_name, avatar_url)
-        `)
+        .select('*')
         .eq('target_user_id', user.id)
         .eq('status', 'pending')
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      setComments(data || []);
+
+      if (!pcs?.length) {
+        setComments([]);
+        setLoading(false);
+        return;
+      }
+
+      // 2) fetch author profiles
+      const authorIds = Array.from(new Set(pcs.map(c => c.author_user_id)));
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('*')
+        .in('user_id', authorIds);
+
+      const profilesById = new Map<string, Profile>();
+      (profiles || []).forEach(p => profilesById.set(p.user_id, p));
+
+      // 3) merge
+      const enriched = pcs.map(c => ({
+        ...c,
+        author_profile: profilesById.get(c.author_user_id) || null
+      }));
+
+      setComments(enriched);
     } catch (err) {
       console.error('Error fetching pending comments:', err);
     } finally {
@@ -133,17 +146,17 @@ export default function ProfileCommentModeration() {
                   <div className="flex items-center justify-between">
                     <div className="flex items-center space-x-3">
                       <Avatar>
-                        <AvatarImage src={comment.profiles?.avatar_url} />
+                        <AvatarImage src={comment.author_profile?.avatar_url} />
                         <AvatarFallback>
-                          {comment.profiles?.display_name?.[0] || comment.profiles?.username?.[0]?.toUpperCase()}
+                          {comment.author_profile?.display_name?.[0] || comment.author_profile?.username?.[0]?.toUpperCase()}
                         </AvatarFallback>
                       </Avatar>
                       <div>
                         <p className="font-medium">
-                          {comment.profiles?.display_name || comment.profiles?.username}
+                          {comment.author_profile?.display_name || comment.author_profile?.username}
                         </p>
                         <p className="text-sm text-muted-foreground">
-                          @{comment.profiles?.username}
+                          @{comment.author_profile?.username}
                         </p>
                       </div>
                     </div>
